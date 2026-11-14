@@ -15,6 +15,8 @@ QT_END_NAMESPACE
 
 class QResizeEvent;
 class QSplitter;
+class QCompleter;
+class QStringListModel;
 
 class ReceptionistMenu : public QMainWindow {
     Q_OBJECT
@@ -32,6 +34,7 @@ private slots:
     void on_btnRegisterPatient_clicked();   
     void on_btnBookAppointment_clicked();  
     void on_btnCreateInvoice_clicked();  
+    void on_btnViewInvoice_clicked();
     void on_btnSearchPatient_clicked();
     void on_cbSpecialty_currentIndexChanged(const QString &specialtyText);
     void on_btnCancelAppointment_clicked();
@@ -49,9 +52,13 @@ private:
     Database& db;
     AuthService& auth;
     QSplitter* contentSplitter;
+    QCompleter* billedRecordCompleter;
+    QStringListModel* billedRecordModel;
     std::map<std::string, std::vector<std::string>> currentRoomMap;
 
     void refreshPatientTable();
+    void refreshBilledRecordCompleter();
+    std::string findLatestBilledRecordIdForPatient(const std::string& patientId) const;
 };
 
 #endif // RECEPTIONISTMENU_H

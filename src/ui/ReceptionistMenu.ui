@@ -85,6 +85,10 @@
           <item><widget class="QLabel" name="lblInvoiceHint"><property name="text"><string>Lập hóa đơn cho bệnh nhân đã hoàn tất lượt khám.</string></property><property name="wordWrap"><bool>true</bool></property><property name="styleSheet"><string>color: #64748b;</string></property></widget></item>
           <item><widget class="QLineEdit" name="txtPatientId_Invoice"><property name="readOnly"><bool>true</bool></property><property name="placeholderText"><string>Mã bệnh nhân</string></property></widget></item>
           <item><widget class="QPushButton" name="btnCreateInvoice"><property name="text"><string>Lập hóa đơn</string></property><property name="minimumHeight"><number>42</number></property></widget></item>
+          <item><widget class="QFrame" name="separatorViewInvoice"><property name="frameShape"><enum>QFrame::HLine</enum></property><property name="frameShadow"><enum>QFrame::Plain</enum></property></widget></item>
+          <item><widget class="QLabel" name="lblViewInvoiceHint"><property name="text"><string>Tra cứu &amp; xuất hóa đơn theo Mã bệnh án (dành cho bệnh nhân đã khám và lập hóa đơn).</string></property><property name="wordWrap"><bool>true</bool></property><property name="styleSheet"><string>color: #64748b;</string></property></widget></item>
+          <item><widget class="QLineEdit" name="txtInvoiceRecordId"><property name="placeholderText"><string>Nhập mã bệnh án (VD: BA00001, BA00197)...</string></property></widget></item>
+          <item><widget class="QPushButton" name="btnViewInvoice"><property name="text"><string>Xem / Xuất hóa đơn</string></property><property name="minimumHeight"><number>42</number></property></widget></item>
           <item><spacer name="checkInSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property></spacer></item>
          </layout>
         </widget>

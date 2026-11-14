@@ -7,6 +7,7 @@
 #include <QWidget>
 #include <QLineEdit>
 #include <QComboBox>
+#include <QCompleter>
 #include <QAbstractSpinBox>
 #include <QAbstractItemView>
 #include <QApplication>
@@ -63,7 +64,10 @@ protected:
             // Phím mũi tên Xuống (Down): Chuyển sang box kế tiếp
             // Phím mũi tên Lên (Up): Chuyển về box trước đó
             // Giữ nguyên phím Enter/Return để QLineEdit tự do phát tín hiệu returnPressed() (như đăng nhập, tìm kiếm)
-            if (qobject_cast<QLineEdit*>(widget)) {
+            if (auto* le = qobject_cast<QLineEdit*>(widget)) {
+                if (le->completer() && le->completer()->popup() && le->completer()->popup()->isVisible()) {
+                    return false;
+                }
                 if (key == Qt::Key_Down) {
                     return FocusNavigator::stepFocus(widget, true);
                 } else if (key == Qt::Key_Up) {

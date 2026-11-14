@@ -3,10 +3,13 @@
 #include "services/Database.h"
 #include "ui/Login.h"
 #include "ui/ClinicStyle.h"
+#include "ui/InvoiceDialog.h"
 #include "utils/Constants.h"
 #include <QMessageBox>
 #include <QTableWidgetItem>
 #include <QComboBox>
+#include <QCompleter>
+#include <QStringListModel>
 #include <QRegularExpressionValidator>
 #include <QRegularExpression>
 #include <QDate>
@@ -29,7 +32,7 @@ string weekdayName(int dayOfWeek) {
 
 ReceptionistMenu::ReceptionistMenu(Database& database, AuthService& authService, QWidget *parent)
     : QMainWindow(parent), ui(new Ui::ReceptionistMenu), db(database), auth(authService),
-      contentSplitter(nullptr) {
+      contentSplitter(nullptr), billedRecordCompleter(nullptr), billedRecordModel(nullptr) {
     ui->setupUi(this);
     applyClinicStyle(this);
     setMinimumSize(820, 600);
@@ -79,10 +82,19 @@ ReceptionistMenu::ReceptionistMenu(Database& database, AuthService& authService,
     connect(ui->cbPendingAppointments, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &ReceptionistMenu::on_cbPendingAppointments_currentIndexChanged);
 
+    billedRecordModel = new QStringListModel(this);
+    billedRecordCompleter = new QCompleter(billedRecordModel, this);
+    billedRecordCompleter->setCaseSensitivity(Qt::CaseInsensitive);
+    billedRecordCompleter->setFilterMode(Qt::MatchContains);
+    billedRecordCompleter->setCompletionMode(QCompleter::PopupCompletion);
+    ui->txtInvoiceRecordId->setCompleter(billedRecordCompleter);
+    connect(ui->txtInvoiceRecordId, &QLineEdit::returnPressed, this, &ReceptionistMenu::on_btnViewInvoice_clicked);
+
     updateAvailableDoctors();
     refreshPatientTable();
     loadPendingAppointments(); 
     loadAvailableRooms(); // Kích hoạt quét không gian ngay khi mở Form
+    refreshBilledRecordCompleter();
 }
 
 ReceptionistMenu::~ReceptionistMenu() {
@@ -148,6 +160,9 @@ void ReceptionistMenu::on_tablePatients_itemClicked(QTableWidgetItem *item) {
         QString patientId = ui->tablePatients->item(row, 0)->text();
         ui->txtBookPatientId->setText(patientId);
         ui->txtPatientId_Invoice->setText(patientId);
+
+        const string latestBilledRecordId = findLatestBilledRecordIdForPatient(patientId.toStdString());
+        ui->txtInvoiceRecordId->setText(QString::fromStdString(latestBilledRecordId));
     }
 }
 
@@ -292,10 +307,35 @@ void ReceptionistMenu::on_btnCreateInvoice_clicked() {
     int result = db.createInvoiceFromQT(patientId, finalFeeToPay);
 
     if (result == 1) {
+        string justBilledRecordId;
+        if (!db.getInvoices().empty()) {
+            const string& lastApptId = db.getInvoices().back().getAppointmentId();
+            if (!lastApptId.empty()) {
+                for (const auto& rec : db.getMedicalRecords()) {
+                    if (rec.getAppointmentId() == lastApptId) {
+                        justBilledRecordId = rec.getRecordId();
+                        break;
+                    }
+                }
+            }
+        }
+        if (justBilledRecordId.empty()) {
+            justBilledRecordId = findLatestBilledRecordIdForPatient(patientId);
+        }
+
         QString msg = QString::fromUtf8("Lập Hóa đơn viện phí thành công.\n\nTổng tiền Bệnh nhân cần thanh toán: ")
                       + QString::number(finalFeeToPay, 'f', 0) + " VNĐ";
         QMessageBox::information(this, QString::fromUtf8("Kế Toán Viện Phí"), msg);
         ui->txtPatientId_Invoice->clear();
+        refreshBilledRecordCompleter();
+
+        if (!justBilledRecordId.empty()) {
+            ui->txtInvoiceRecordId->setText(QString::fromStdString(justBilledRecordId));
+            if (InvoiceDialog::findInvoiceForRecord(db, justBilledRecordId) != nullptr) {
+                InvoiceDialog dlg(db, justBilledRecordId, this);
+                dlg.exec();
+            }
+        }
     }
     else if (result == -1) {
         QMessageBox::critical(this, QString::fromUtf8("Lỗi"), QString::fromUtf8("Hồ sơ Bệnh nhân không tồn tại."));
@@ -528,4 +568,66 @@ void ReceptionistMenu::refreshPatientTable() {
         
         row++;
     }
+}
+
+string ReceptionistMenu::findLatestBilledRecordIdForPatient(const string& patientId) const {
+    if (patientId.empty()) return "";
+
+    const auto& records = db.getMedicalRecords();
+    for (auto it = records.rbegin(); it != records.rend(); ++it) {
+        Appointment* appt = db.findAppointmentById(it->getAppointmentId());
+        if (appt != nullptr && appt->getPatientId() == patientId) {
+            if (InvoiceDialog::findInvoiceForRecord(db, it->getRecordId()) != nullptr) {
+                return it->getRecordId();
+            }
+        }
+    }
+    return "";
+}
+
+void ReceptionistMenu::refreshBilledRecordCompleter() {
+    if (billedRecordModel == nullptr) return;
+
+    QStringList items;
+    const auto& records = db.getMedicalRecords();
+    for (auto it = records.rbegin(); it != records.rend(); ++it) {
+        const Appointment* appt = nullptr;
+        const Invoice* inv = InvoiceDialog::findInvoiceForRecord(db, it->getRecordId(), nullptr, &appt);
+        if (inv == nullptr) continue;
+
+        const string patId = appt ? appt->getPatientId() : inv->getPatientId();
+        Patient* pat = db.findPatientById(patId);
+        const string patName = pat ? pat->getFullName() : "Không rõ";
+
+        items.append(QString::fromStdString(
+            it->getRecordId() + " - " + patName + " (" + patId + " - " + inv->getId() + ")"));
+    }
+    billedRecordModel->setStringList(items);
+}
+
+void ReceptionistMenu::on_btnViewInvoice_clicked() {
+    const string recordId = InvoiceDialog::normalizeRecordId(ui->txtInvoiceRecordId->text().toStdString());
+
+    if (recordId.empty()) {
+        QMessageBox::warning(this, QString::fromUtf8("Thiếu thông tin"),
+                             QString::fromUtf8("Vui lòng nhập Mã bệnh án (VD: BA00001) để tra cứu hóa đơn."));
+        return;
+    }
+
+    if (db.findMedicalRecordById(recordId) == nullptr) {
+        QMessageBox::warning(this, QString::fromUtf8("Không tìm thấy"),
+                             QString::fromUtf8("Không tìm thấy Hồ sơ bệnh án với mã [%1] trên hệ thống.")
+                                 .arg(QString::fromStdString(recordId)));
+        return;
+    }
+
+    if (InvoiceDialog::findInvoiceForRecord(db, recordId) == nullptr) {
+        QMessageBox::warning(this, QString::fromUtf8("Chưa lập hóa đơn"),
+                             QString::fromUtf8("Hồ sơ bệnh án [%1] chưa được lập hóa đơn viện phí. Vui lòng hoàn tất khám và lập hóa đơn trước khi xuất.")
+                                 .arg(QString::fromStdString(recordId)));
+        return;
+    }
+
+    InvoiceDialog dlg(db, recordId, this);
+    dlg.exec();
 }
